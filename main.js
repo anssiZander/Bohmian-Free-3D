@@ -30,17 +30,17 @@ const params = {
   packetX: 0.35,
   packetY: 0.5,
   packetZ: 0.5,
-  packetSigma: 12.0,
+  packetSigma: 10.0,
 
   nParticles: 1500,
   rhoMin: 1e-6,
   velClamp: 80.0,
   spinS: 0.5,
 
-  cloudGain: 3.6,
+  cloudGain: .5,
   cloudGamma: 0.55,
   cloudCutoff: 0.003,
-  cloudPointSize: 5.8,
+  cloudPointSize: 55.,
   showPhase: 0,
   showCloud: 1,
 
@@ -50,12 +50,12 @@ const params = {
   dotGain: 0.85,
 
   showTrail: 0,
-  trailHalfLife: 35.0,
+  trailHalfLife: 3.0,
   trailVisGain: 0.85,
   trailVisGamma: 1,
   trailStampGain: 0.45,
   trailWidth: 2.0,
-  trailBlendMode: 1,
+  trailBlendMode: 2,
   densityScale: 0.5,
 
   paletteId: 4,
@@ -197,24 +197,24 @@ addSlider("p0", "momentum p", 0., 6.0, 0.1, () => resetAll());
 addSlider("dt", "dt", 0.002, 0.02, 0.002);
 addSlider("packetX", "packet start x", 0.15, 0.75, 0.01, () => resetAll());
 //addSlider("packetY", "packet start y", 0.05, 0.95, 0.01, () => resetAll());
-addSlider("packetSigma", "packet sigma", 4.0, 24.0, 0.5, () => resetAll());
+addSlider("packetSigma", "packet sigma", 4.0, 14.0, 0.5, () => resetAll());
 addSlider("spinS", "spin strength", 0.0, 2.0, 0.5);
 addSlider("nParticles", "particle count", 1, 10000, 1, () => rebuildParticles());
 
 addSectionHeader("Visual Parameters");
 addToggleInt("showCloud", "density cloud");
 addToggleInt("showPhase", "show phase");
-addSlider("cloudGain", "cloud density", 1, 16.0, 0.1);
-addSlider("cloudPointSize", "cloud point size", 1, 15.0, 0.1);
+addSlider("cloudGain", "cloud density", 0.1, 5.0, 0.1);
+addSlider("cloudPointSize", "cloud point size", 1, 85.0, 1);
 addToggleInt("showParticles", "show particles");
 addSlider("dotSize", "particle size", 2.0, 16.0, 0.5);
 addSlider("dotGain", "particle brightness", 0.1, 3.0, 0.1);
 
 addToggleInt("showTrail", "draw trails");
-addSlider("trailHalfLife", "trail half-life", 1.0, 100.0, 1.0);
-//addSlider("trailVisGain", "trail gain", 0.1, 1.0, 0.1);
-//addSlider("trailVisGamma", "trail gamma", 0.4, 2.0, 0.05);
-addSlider("trailWidth", "trail width (px)", 1, 5.0, 1);
+addSlider("trailHalfLife", "trail half-life", 1.0, 20.0, 1.0);
+addSlider("trailVisGain", "trail gain", 0.1, 1.0, 0.1);
+addSlider("trailVisGamma", "trail gamma", 0.4, 2.0, 0.05);
+addSlider("trailWidth", "trail width (px)", 1, 15.0, 1);
 
 document.getElementById("reset").onclick = () => resetAll();
 document.getElementById("pause").onclick = (e) => {
@@ -463,6 +463,7 @@ let boxBuffer = null, vaoBox = null, boxVertexCount = 0;
 
 let densW = 0, densH = 0;
 let densTexA = null, densTexB = null, densFboA = null, densFboB = null, densFlip = 0;
+let trailClearPending = false;
 
 function resizeCanvas() {
   const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -582,6 +583,10 @@ let orbitPointer = null;
 let orbitLastX = 0;
 let orbitLastY = 0;
 
+function requestTrailClear() {
+  trailClearPending = true;
+}
+
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   orbitPointer = e.pointerId;
@@ -596,10 +601,14 @@ canvas.addEventListener("pointermove", (e) => {
   const dy = e.clientY - orbitLastY;
   orbitLastX = e.clientX;
   orbitLastY = e.clientY;
+  if (dx === 0 && dy === 0) return;
 
+  const prevYaw = cameraOrbit.yaw;
+  const prevPitch = cameraOrbit.pitch;
   cameraOrbit.yaw -= dx * 0.006;
   const halfPi = Math.PI * 0.5;
   cameraOrbit.pitch = Math.max(-halfPi, Math.min(halfPi, cameraOrbit.pitch + dy * 0.006));
+  if (cameraOrbit.yaw !== prevYaw || cameraOrbit.pitch !== prevPitch) requestTrailClear();
 });
 
 canvas.addEventListener("pointerup", (e) => {
@@ -618,7 +627,9 @@ canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
   const n = Math.max(simW, simH, simD) * params.boxScale;
   const zoom = Math.exp(e.deltaY * 0.001);
+  const prevDistance = cameraOrbit.distance;
   cameraOrbit.distance = Math.max(0.65 * n, Math.min(5.0 * n, cameraOrbit.distance * zoom));
+  if (cameraOrbit.distance !== prevDistance) requestTrailClear();
 }, { passive: false });
 
 function cameraViewProj() {
@@ -817,6 +828,11 @@ function rebuildDensity() {
 }
 
 function clearDensity() {
+  if (!densFboA || !densFboB) {
+    trailClearPending = false;
+    return;
+  }
+
   gl.bindFramebuffer(gl.FRAMEBUFFER, densFboA);
   gl.viewport(0, 0, densW, densH);
   gl.clearColor(0, 0, 0, 0);
@@ -829,6 +845,7 @@ function clearDensity() {
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   densFlip = 0;
+  trailClearPending = false;
 }
 
 function densityStepAndStamp() {
@@ -1077,6 +1094,8 @@ async function main() {
 
   requestAnimationFrame(function loop() {
     if (resizeCanvas()) rebuildDensity();
+
+    if (trailClearPending) clearDensity();
 
     if (!paused) {
       const steps = Math.floor(params.stepsPerFrame);
