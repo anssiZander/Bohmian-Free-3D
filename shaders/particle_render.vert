@@ -13,12 +13,12 @@ uniform float uCameraDistance;
 uniform int uCameraProjection;
 out float vAlive;
 out float vParticleId;
-out float vTrailDepthFade;
+out float vDepthFade;
 
 void main(){
   vAlive = aState.w;
   vParticleId = float(gl_VertexID) / max(1.0, float(uNumParticles));
-  vTrailDepthFade = 1.0;
+  vDepthFade = 1.0;
 
   if (vAlive < 0.5) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -33,8 +33,9 @@ void main(){
   gl_Position = clip;
   float sceneRadius = 0.5 * length(maxP * uBoxScale);
   float distToCamera = distance(worldPos, uCameraEye);
-  float depthT = smoothstep(uCameraDistance - sceneRadius, uCameraDistance + sceneRadius, distToCamera);
-  vTrailDepthFade = mix(1.0, 0.62, depthT);
+  float depthSpan = max(1.0, sceneRadius * 0.72);
+  float depthT = smoothstep(uCameraDistance - depthSpan, uCameraDistance + depthSpan, distToCamera);
+  vDepthFade = mix(1.0, 0.12, depthT);
 
   float size = uPointSize;
   if (uTrailWidth > 0.0) size = uTrailWidth;

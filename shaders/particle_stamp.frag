@@ -3,7 +3,7 @@ precision highp float;
 
 in float vAlive;
 in float vParticleId;
-in float vTrailDepthFade;
+in float vDepthFade;
 out vec4 fragColor;
 
 uniform float uDotSigma;
@@ -25,7 +25,7 @@ void main(){
   float s = max(uDotSigma, 1e-4);
   float blur = exp(-(r*r) / s);
 
-  float a = uDotGain * uStampGain * vTrailDepthFade * blur * edge;
+  float a = uDotGain * uStampGain * vDepthFade * blur * edge;
   a = clamp(a, 0.0, 1.0);
 
   

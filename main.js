@@ -41,12 +41,12 @@ const params = {
   cloudGain: .5,
   cloudGamma: 0.55,
   cloudCutoff: 0.003,
-  cloudPointSize: 55.,
+  cloudPointSize: 80.,
   showPhase: 0,
   showCloud: 1,
 
   showParticles: 1,
-  dotSize: 5.0,
+  dotSize: 8.0,
   dotSigma: 0.28,
   dotGain: 0.85,
 
@@ -218,7 +218,7 @@ addSectionHeader("Visual Parameters");
 addToggleInt("showCloud", "density cloud");
 addToggleInt("showPhase", "show phase");
 addSlider("cloudGain", "cloud density", 0.1, 5.0, 0.1);
-addSlider("cloudPointSize", "cloud point size", 1, 85.0, 1);
+addSlider("cloudPointSize", "cloud point size", 20, 100.0, 10);
 addToggleInt("showParticles", "show particles");
 addSlider("dotSize", "particle size", 2.0, 16.0, 0.5);
 addSlider("dotGain", "particle brightness", 0.1, 3.0, 0.1);
@@ -227,7 +227,7 @@ addToggleInt("showTrail", "draw trails");
 addSlider("trailHalfLife", "trail half-life", .1, 10.0, .1);
 addSlider("trailVisGain", "trail gain", 0.1, 1.0, 0.1);
 addSlider("trailVisGamma", "trail gamma", 0.4, 2.0, 0.05);
-addSlider("trailWidth", "trail width (px)", 1, 15.0, 1);
+addSlider("trailWidth", "trail width", 1, 15.0, 1);
 
 document.getElementById("reset").onclick = () => resetAll();
 document.getElementById("pause").onclick = (e) => {
@@ -434,6 +434,7 @@ function buildPrograms() {
     uPointSize: u(progPartView, "uPointSize"),
     uDotSigma: u(progPartView, "uDotSigma"),
     uDotGain: u(progPartView, "uDotGain"),
+    uCameraEye: u(progPartView, "uCameraEye"),
     uCameraDistance: u(progPartView, "uCameraDistance"),
     uCameraProjection: u(progPartView, "uCameraProjection"),
   };
@@ -1235,6 +1236,7 @@ function render() {
     gl.uniform1f(U.partView.uPointSize, params.dotSize);
     gl.uniform1f(U.partView.uDotSigma, params.dotSigma);
     gl.uniform1f(U.partView.uDotGain, params.dotGain);
+    gl.uniform3fv(U.partView.uCameraEye, camera.eye);
     gl.uniform1f(U.partView.uCameraDistance, camera.distance);
     gl.uniform1i(U.partView.uCameraProjection, params.cameraProjection | 0);
 

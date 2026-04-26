@@ -2,6 +2,7 @@
 precision highp float;
 
 in float vAlive;
+in float vDepthFade;
 out vec4 fragColor;
 
 uniform float uDotSigma;
@@ -17,7 +18,7 @@ void main(){
   float edge = smoothstep(0.5, 0.42, r);
   float s = max(uDotSigma, 1e-4);
   float blur = exp(-(r * r) / s);
-  float a = clamp(uDotGain * blur * edge, 0.0, 0.85);
+  float a = clamp(uDotGain * vDepthFade * blur * edge, 0.0, 0.85);
 
   vec3 col = vec3(1.0, 0.92, 0.16);
   fragColor = vec4(col, a);
