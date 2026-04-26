@@ -33,7 +33,7 @@ const params = {
   packetZ: 0.5,
   packetSigma: 10.0,
 
-  nParticles: 1500,
+  nParticles: 500,
   rhoMin: 1e-6,
   velClamp: 80.0,
   spinS: 0.5,
@@ -46,16 +46,16 @@ const params = {
   showCloud: 1,
 
   showParticles: 1,
-  dotSize: 3.5,
+  dotSize: 5.0,
   dotSigma: 0.28,
   dotGain: 0.85,
 
   showTrail: 0,
-  trailHalfLife: 3.0,
+  trailHalfLife: 1.0,
   trailVisGain: 0.5,
   trailVisGamma: 1,
   trailStampGain: 0.45,
-  trailWidth: 2.0,
+  trailWidth: 8.0,
   trailBlendMode: 2,
   densityScale: 0.5,
 
@@ -84,6 +84,12 @@ let paused = false;
 
 const controls = document.getElementById("controls");
 const statsEl = document.getElementById("stats");
+const viewGizmo = document.getElementById("viewGizmo");
+const viewButtons = {
+  XY: document.getElementById("viewXY"),
+  XZ: document.getElementById("viewXZ"),
+  YZ: document.getElementById("viewYZ"),
+};
 
 function fmt(v) {
   const av = Math.abs(v);
@@ -175,6 +181,7 @@ function addCycleButton(key, label, values, onChange = null) {
   row.appendChild(btn);
   row.appendChild(val);
   controls.appendChild(row);
+  return { button: btn, sync };
 }
 
 function addSectionHeader(label) {
@@ -192,7 +199,11 @@ function addSectionHeader(label) {
 
 addSlider("simRes", "grid size", 32, MAX_SIM_RES, 4, () => rebuildSimulation());
 addSlider("stepsPerFrame", "Steps/frame", 1, 30, 1);
-addCycleButton("cameraProjection", "camera view", ["Perspective", "Orthographic"], () => requestTrailClear());
+const cameraProjectionControl = addCycleButton("cameraProjection", "camera view", ["Perspective", "Orthographic"], () => {
+  activeOrthoView = null;
+  syncCameraUi();
+  requestTrailClear();
+});
 
 addSectionHeader("Physical Parameters");
 addSlider("p0", "momentum p", 0., 6.0, 0.1, () => resetAll());
@@ -201,7 +212,7 @@ addSlider("packetX", "packet start x", 0.15, 0.75, 0.01, () => resetAll());
 //addSlider("packetY", "packet start y", 0.05, 0.95, 0.01, () => resetAll());
 addSlider("packetSigma", "packet sigma", 4.0, 14.0, 0.5, () => resetAll());
 addSlider("spinS", "spin strength", 0.0, 2.0, 0.5);
-addSlider("nParticles", "particle count", 1, 10000, 1, () => rebuildParticles());
+addSlider("nParticles", "particle count", 1, 5001, 100, () => rebuildParticles());
 
 addSectionHeader("Visual Parameters");
 addToggleInt("showCloud", "density cloud");
@@ -213,7 +224,7 @@ addSlider("dotSize", "particle size", 2.0, 16.0, 0.5);
 addSlider("dotGain", "particle brightness", 0.1, 3.0, 0.1);
 
 addToggleInt("showTrail", "draw trails");
-addSlider("trailHalfLife", "trail half-life", 1.0, 20.0, 1.0);
+addSlider("trailHalfLife", "trail half-life", .1, 10.0, .1);
 addSlider("trailVisGain", "trail gain", 0.1, 1.0, 0.1);
 addSlider("trailVisGamma", "trail gamma", 0.4, 2.0, 0.05);
 addSlider("trailWidth", "trail width (px)", 1, 15.0, 1);
@@ -599,6 +610,19 @@ const cameraOrbit = {
   pitch: 0.43,
   distance: 1,
 };
+const cameraTarget = {
+  yaw: cameraOrbit.yaw,
+  pitch: cameraOrbit.pitch,
+  distance: cameraOrbit.distance,
+};
+const CAMERA_EASE = 0.18;
+const ORTHO_VIEWS = {
+  XY: { yaw: -Math.PI * 0.5, pitch: Math.PI * 0.5 },
+  XZ: { yaw: -Math.PI * 0.5, pitch: 0 },
+  YZ: { yaw: 0, pitch: 0 },
+};
+
+let activeOrthoView = null;
 
 let orbitPointer = null;
 let orbitLastX = 0;
@@ -608,11 +632,103 @@ function requestTrailClear() {
   trailClearPending = true;
 }
 
+function clampCameraPitch(pitch) {
+  const halfPi = Math.PI * 0.5;
+  return Math.max(-halfPi, Math.min(halfPi, pitch));
+}
+
+function cameraDistanceBounds() {
+  const n = Math.max(simW, simH, simD) * params.boxScale;
+  return {
+    n,
+    min: 0.65 * n,
+    max: 5.0 * n,
+  };
+}
+
+function clampCameraDistance(distance) {
+  const bounds = cameraDistanceBounds();
+  if (!Number.isFinite(distance) || distance <= 1) return 2.15 * bounds.n;
+  return Math.max(bounds.min, Math.min(bounds.max, distance));
+}
+
+function syncCameraUi() {
+  cameraProjectionControl.sync();
+  for (const [key, btn] of Object.entries(viewButtons)) {
+    if (!btn) continue;
+    btn.classList.toggle("selected", params.cameraProjection === 1 && activeOrthoView === key);
+  }
+}
+
+function setCameraProjection(mode) {
+  const nextMode = mode ? 1 : 0;
+  if (params.cameraProjection !== nextMode) {
+    params.cameraProjection = nextMode;
+    requestTrailClear();
+  }
+  if (nextMode === 0) activeOrthoView = null;
+  syncCameraUi();
+}
+
+function selectOrthoView(key) {
+  const view = ORTHO_VIEWS[key];
+  if (!view) return;
+  activeOrthoView = key;
+  setCameraProjection(1);
+  cameraTarget.yaw = view.yaw;
+  cameraTarget.pitch = view.pitch;
+  requestTrailClear();
+  syncCameraUi();
+}
+
+function disableOrthoModeFromOrbit() {
+  if (params.cameraProjection !== 0 || activeOrthoView !== null) {
+    activeOrthoView = null;
+    setCameraProjection(0);
+  }
+}
+
+function syncCameraTargetToCurrent() {
+  cameraTarget.yaw = cameraOrbit.yaw;
+  cameraTarget.pitch = cameraOrbit.pitch;
+  cameraTarget.distance = cameraOrbit.distance;
+}
+
+function shortestAngleDelta(from, to) {
+  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+}
+
+function updateCameraEasing() {
+  const prevYaw = cameraOrbit.yaw;
+  const prevPitch = cameraOrbit.pitch;
+  const prevDistance = cameraOrbit.distance;
+  const targetDistance = clampCameraDistance(cameraTarget.distance);
+  cameraTarget.distance = targetDistance;
+
+  cameraOrbit.yaw += shortestAngleDelta(cameraOrbit.yaw, cameraTarget.yaw) * CAMERA_EASE;
+  cameraOrbit.pitch += (cameraTarget.pitch - cameraOrbit.pitch) * CAMERA_EASE;
+  cameraOrbit.distance += (targetDistance - cameraOrbit.distance) * CAMERA_EASE;
+
+  if (Math.abs(shortestAngleDelta(cameraOrbit.yaw, cameraTarget.yaw)) < 1e-5) cameraOrbit.yaw = cameraTarget.yaw;
+  if (Math.abs(cameraOrbit.pitch - cameraTarget.pitch) < 1e-5) cameraOrbit.pitch = cameraTarget.pitch;
+  if (Math.abs(cameraOrbit.distance - targetDistance) < 1e-3) cameraOrbit.distance = targetDistance;
+
+  return Math.abs(shortestAngleDelta(prevYaw, cameraOrbit.yaw)) > 1e-7 ||
+    Math.abs(prevPitch - cameraOrbit.pitch) > 1e-7 ||
+    Math.abs(prevDistance - cameraOrbit.distance) > 1e-5;
+}
+
+for (const [key, btn] of Object.entries(viewButtons)) {
+  if (btn) btn.addEventListener("click", () => selectOrthoView(key));
+}
+syncCameraUi();
+
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   orbitPointer = e.pointerId;
   orbitLastX = e.clientX;
   orbitLastY = e.clientY;
+  syncCameraTargetToCurrent();
   canvas.setPointerCapture(e.pointerId);
 });
 
@@ -624,12 +740,12 @@ canvas.addEventListener("pointermove", (e) => {
   orbitLastY = e.clientY;
   if (dx === 0 && dy === 0) return;
 
-  const prevYaw = cameraOrbit.yaw;
-  const prevPitch = cameraOrbit.pitch;
-  cameraOrbit.yaw -= dx * 0.006;
-  const halfPi = Math.PI * 0.5;
-  cameraOrbit.pitch = Math.max(-halfPi, Math.min(halfPi, cameraOrbit.pitch + dy * 0.006));
-  if (cameraOrbit.yaw !== prevYaw || cameraOrbit.pitch !== prevPitch) requestTrailClear();
+  disableOrthoModeFromOrbit();
+  const prevYaw = cameraTarget.yaw;
+  const prevPitch = cameraTarget.pitch;
+  cameraTarget.yaw -= dx * 0.006;
+  cameraTarget.pitch = clampCameraPitch(cameraTarget.pitch + dy * 0.006);
+  if (cameraTarget.yaw !== prevYaw || cameraTarget.pitch !== prevPitch) requestTrailClear();
 });
 
 canvas.addEventListener("pointerup", (e) => {
@@ -646,20 +762,17 @@ canvas.addEventListener("pointercancel", (e) => {
 
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
-  const n = Math.max(simW, simH, simD) * params.boxScale;
   const zoom = Math.exp(e.deltaY * 0.001);
-  const prevDistance = cameraOrbit.distance;
-  cameraOrbit.distance = Math.max(0.65 * n, Math.min(5.0 * n, cameraOrbit.distance * zoom));
-  if (cameraOrbit.distance !== prevDistance) requestTrailClear();
+  const prevDistance = cameraTarget.distance;
+  cameraTarget.distance = clampCameraDistance(cameraTarget.distance * zoom);
+  if (cameraTarget.distance !== prevDistance) requestTrailClear();
 }, { passive: false });
 
 function cameraFrame() {
   const target = boxCenterWorld();
   const n = Math.max(simW, simH, simD) * params.boxScale;
-  if (!Number.isFinite(cameraOrbit.distance) || cameraOrbit.distance <= 1) {
-    cameraOrbit.distance = 2.15 * n;
-  }
-  cameraOrbit.distance = Math.max(0.65 * n, Math.min(5.0 * n, cameraOrbit.distance));
+  cameraOrbit.distance = clampCameraDistance(cameraOrbit.distance);
+  cameraTarget.distance = clampCameraDistance(cameraTarget.distance);
 
   const cp = Math.cos(cameraOrbit.pitch);
   const eye = [
@@ -689,6 +802,93 @@ function cameraFrame() {
     eye,
     distance: cameraOrbit.distance,
   };
+}
+
+function cameraBasis() {
+  const cp = Math.cos(cameraOrbit.pitch);
+  const sp = Math.sin(cameraOrbit.pitch);
+  const back = vec3Normalize([
+    cp * Math.cos(cameraOrbit.yaw),
+    cp * Math.sin(cameraOrbit.yaw),
+    sp,
+  ]);
+  const upHint = [
+    -sp * Math.cos(cameraOrbit.yaw),
+    -sp * Math.sin(cameraOrbit.yaw),
+    cp,
+  ];
+  const right = vec3Normalize(vec3Cross(upHint, back));
+  const up = vec3Cross(back, right);
+  return { right, up, back };
+}
+
+function drawViewGizmo() {
+  if (!viewGizmo) return;
+
+  const rect = viewGizmo.getBoundingClientRect();
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const w = Math.max(1, Math.floor(rect.width * dpr));
+  const h = Math.max(1, Math.floor(rect.height * dpr));
+  if (viewGizmo.width !== w || viewGizmo.height !== h) {
+    viewGizmo.width = w;
+    viewGizmo.height = h;
+  }
+
+  const ctx = viewGizmo.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  const basis = cameraBasis();
+  const origin = [rect.width * 0.46, rect.height * 0.58];
+  const len = Math.min(rect.width, rect.height) * 0.33;
+  const axes = [
+    { label: "X", color: "#ff5b5b", dir: [1, 0, 0] },
+    { label: "Y", color: "#58d26f", dir: [0, 1, 0] },
+    { label: "Z", color: "#58a6ff", dir: [0, 0, 1] },
+  ].map((axis) => {
+    const sx = vec3Dot(axis.dir, basis.right);
+    const sy = vec3Dot(axis.dir, basis.up);
+    const depth = vec3Dot(axis.dir, basis.back);
+    return { ...axis, x: sx * len, y: -sy * len, depth };
+  }).sort((a, b) => a.depth - b.depth);
+
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.fillStyle = "rgba(255,255,255,0.82)";
+  ctx.beginPath();
+  ctx.arc(origin[0], origin[1], 2.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (const axis of axes) {
+    const x0 = origin[0];
+    const y0 = origin[1];
+    const x1 = x0 + axis.x;
+    const y1 = y0 + axis.y;
+    const angle = Math.atan2(axis.y, axis.x);
+    const alpha = 0.62 + 0.38 * ((axis.depth + 1) * 0.5);
+
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = axis.color;
+    ctx.fillStyle = axis.color;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - Math.cos(angle - 0.55) * 7, y1 - Math.sin(angle - 0.55) * 7);
+    ctx.lineTo(x1 - Math.cos(angle + 0.55) * 7, y1 - Math.sin(angle + 0.55) * 7);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.globalAlpha = 1;
+    ctx.font = "700 11px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(axis.label, x1 + Math.cos(angle) * 9, y1 + Math.sin(angle) * 9);
+  }
 }
 
 function setWaveInitUniforms() {
@@ -1102,6 +1302,7 @@ function rebuildSimulation() {
   waveTexH = simH * simD;
   voxelCount = simW * simH * simD;
   cameraOrbit.distance = 2.15 * Math.max(simW, simH, simD) * params.boxScale;
+  cameraTarget.distance = cameraOrbit.distance;
 
   deleteWaveTargets();
   texA = makeTexFloat32(waveTexW, waveTexH);
@@ -1136,6 +1337,9 @@ async function main() {
 
   requestAnimationFrame(function loop() {
     if (resizeCanvas()) rebuildDensity();
+
+    if (updateCameraEasing()) requestTrailClear();
+    drawViewGizmo();
 
     if (trailClearPending) clearDensity();
 

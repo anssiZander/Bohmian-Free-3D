@@ -7,7 +7,7 @@
   <style>
     html, body { margin:0; height:100%; background:#000; overflow:hidden; font-family: system-ui, sans-serif; }
     #wrap { position:relative; width:100%; height:100%; }
-    canvas { width:100%; height:100%; display:block; }
+    #c { width:100%; height:100%; display:block; }
     #ui {
       position:absolute; left:12px; top:12px; width:330px;
       background:rgba(0,0,0,0.55); color:#ddd; padding:12px 12px 10px;
@@ -36,6 +36,25 @@
     .row.mode-row .toggle-group button { min-width:0; white-space:normal; line-height:1.15; }
     .stat { margin-top:8px; font-size:12px; color:#bbb; line-height:1.35; }
     .stat b { color:#fff; font-weight:600; }
+    #viewtools {
+      position:absolute; left:382px; top:12px; width:118px;
+      display:flex; flex-direction:column; align-items:center; gap:6px;
+      background:rgba(0,0,0,0.42); color:#ddd; padding:7px;
+      border:1px solid rgba(255,255,255,0.12); border-radius:8px;
+      backdrop-filter: blur(6px);
+      user-select:none;
+    }
+    #viewGizmo {
+      width:104px; height:76px; display:block;
+    }
+    #viewtools .view-buttons {
+      display:flex; gap:6px;
+    }
+    #viewtools button {
+      flex:0 0 auto; width:32px; height:30px; padding:0;
+      border-radius:6px; font-size:11px; font-weight:700;
+      line-height:1; text-align:center;
+    }
   </style>
 </head>
 <body>
@@ -59,6 +78,14 @@
   </div>
   <div class="stat" id="stats"></div>
 </div>
+    </div>
+    <div id="viewtools" aria-label="Camera view controls">
+      <canvas id="viewGizmo" width="104" height="76"></canvas>
+      <div class="view-buttons">
+        <button id="viewXY" type="button" title="Top XY view">XY</button>
+        <button id="viewXZ" type="button" title="Side XZ view">XZ</button>
+        <button id="viewYZ" type="button" title="Side YZ view">YZ</button>
+      </div>
     </div>
   </div>
   <script type="module" src="./main.js"></script>
