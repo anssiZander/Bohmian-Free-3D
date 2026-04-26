@@ -11,6 +11,8 @@ uniform float uCloudGamma;
 uniform float uCloudCutoff;
 uniform float uPointSize;
 uniform int uShowPhase;
+uniform float uCameraDistance;
+uniform int uCameraProjection;
 
 out float vAlpha;
 out float vPhase;
@@ -49,6 +51,9 @@ void main() {
 
   vec4 clip = uViewProj * vec4(vec3(p) * uBoxScale, 1.0);
   gl_Position = clip;
-  float perspective = clamp(160.0 / max(1.0, clip.w), 0.35, 2.3);
-  gl_PointSize = uPointSize * perspective * mix(0.65, 1.45, intensity);
+  float viewScale = clamp(160.0 / max(1.0, clip.w), 0.35, 2.3);
+  if (uCameraProjection == 1) {
+    viewScale = clamp(160.0 / max(1.0, uCameraDistance), 0.35, 2.3);
+  }
+  gl_PointSize = uPointSize * viewScale * mix(0.65, 1.45, intensity);
 }

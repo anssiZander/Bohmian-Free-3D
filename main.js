@@ -21,6 +21,7 @@ const params = {
   simRes: Math.min(96, MAX_SIM_RES),
   stepsPerFrame: 8,
   boxScale: 2.5,
+  cameraProjection: 0,
 
   hbar: 6.0,
   mass: 1.0,
@@ -51,7 +52,7 @@ const params = {
 
   showTrail: 0,
   trailHalfLife: 3.0,
-  trailVisGain: 0.85,
+  trailVisGain: 0.5,
   trailVisGamma: 1,
   trailStampGain: 0.45,
   trailWidth: 2.0,
@@ -191,6 +192,7 @@ function addSectionHeader(label) {
 
 addSlider("simRes", "grid size", 32, MAX_SIM_RES, 4, () => rebuildSimulation());
 addSlider("stepsPerFrame", "Steps/frame", 1, 30, 1);
+addCycleButton("cameraProjection", "camera view", ["Perspective", "Orthographic"], () => requestTrailClear());
 
 addSectionHeader("Physical Parameters");
 addSlider("p0", "momentum p", 0., 6.0, 0.1, () => resetAll());
@@ -410,6 +412,8 @@ function buildPrograms() {
     uPointSize: u(progCloudView, "uPointSize"),
     uShowPhase: u(progCloudView, "uShowPhase"),
     uPaletteId: u(progCloudView, "uPaletteId"),
+    uCameraDistance: u(progCloudView, "uCameraDistance"),
+    uCameraProjection: u(progCloudView, "uCameraProjection"),
   };
 
   U.partView = {
@@ -419,6 +423,8 @@ function buildPrograms() {
     uPointSize: u(progPartView, "uPointSize"),
     uDotSigma: u(progPartView, "uDotSigma"),
     uDotGain: u(progPartView, "uDotGain"),
+    uCameraDistance: u(progPartView, "uCameraDistance"),
+    uCameraProjection: u(progPartView, "uCameraProjection"),
   };
 
   U.partStamp = {
@@ -431,6 +437,9 @@ function buildPrograms() {
     uStampGain: u(progPartStamp, "uStampGain"),
     uNumParticles: u(progPartStamp, "uNumParticles"),
     uTrailWidth: u(progPartStamp, "uTrailWidth"),
+    uCameraEye: u(progPartStamp, "uCameraEye"),
+    uCameraDistance: u(progPartStamp, "uCameraDistance"),
+    uCameraProjection: u(progPartStamp, "uCameraProjection"),
   };
 
   U.densityStep = {
@@ -535,6 +544,18 @@ function mat4Perspective(fovyRad, aspect, near, far) {
   return out;
 }
 
+function mat4Orthographic(left, right, bottom, top, near, far) {
+  const out = new Float32Array(16);
+  out[0] = 2 / (right - left);
+  out[5] = 2 / (top - bottom);
+  out[10] = -2 / (far - near);
+  out[12] = -(right + left) / (right - left);
+  out[13] = -(top + bottom) / (top - bottom);
+  out[14] = -(far + near) / (far - near);
+  out[15] = 1;
+  return out;
+}
+
 function mat4LookAt(eye, center, up) {
   const z = vec3Normalize(vec3Sub(eye, center));
   const x = vec3Normalize(vec3Cross(up, z));
@@ -632,7 +653,7 @@ canvas.addEventListener("wheel", (e) => {
   if (cameraOrbit.distance !== prevDistance) requestTrailClear();
 }, { passive: false });
 
-function cameraViewProj() {
+function cameraFrame() {
   const target = boxCenterWorld();
   const n = Math.max(simW, simH, simD) * params.boxScale;
   if (!Number.isFinite(cameraOrbit.distance) || cameraOrbit.distance <= 1) {
@@ -654,8 +675,20 @@ function cameraViewProj() {
   ];
   const aspect = Math.max(1e-3, canvas.width / Math.max(1, canvas.height));
   const view = mat4LookAt(eye, target, up);
-  const proj = mat4Perspective(45 * Math.PI / 180, aspect, 0.04 * n, 8.0 * n);
-  return mat4Mul(proj, view);
+  const fovy = 45 * Math.PI / 180;
+  let proj;
+  if ((params.cameraProjection | 0) === 1) {
+    const halfH = Math.tan(fovy * 0.5) * cameraOrbit.distance;
+    const halfW = halfH * aspect;
+    proj = mat4Orthographic(-halfW, halfW, -halfH, halfH, 0.04 * n, 8.0 * n);
+  } else {
+    proj = mat4Perspective(fovy, aspect, 0.04 * n, 8.0 * n);
+  }
+  return {
+    viewProj: mat4Mul(proj, view),
+    eye,
+    distance: cameraOrbit.distance,
+  };
 }
 
 function setWaveInitUniforms() {
@@ -850,7 +883,8 @@ function clearDensity() {
 
 function densityStepAndStamp() {
   const dtTotal = params.dt * Math.floor(params.stepsPerFrame);
-  const viewProj = cameraViewProj();
+  const camera = cameraFrame();
+  const viewProj = camera.viewProj;
   const sizeScale = densW / Math.max(1, canvas.width);
 
   const src = densFlip ? densTexB : densTexA;
@@ -887,6 +921,9 @@ function densityStepAndStamp() {
   gl.uniform1f(U.partStamp.uStampGain, params.trailStampGain);
   gl.uniform1i(U.partStamp.uNumParticles, params.nParticles);
   gl.uniform1f(U.partStamp.uTrailWidth, params.trailWidth * sizeScale);
+  gl.uniform3fv(U.partStamp.uCameraEye, camera.eye);
+  gl.uniform1f(U.partStamp.uCameraDistance, camera.distance);
+  gl.uniform1i(U.partStamp.uCameraProjection, params.cameraProjection | 0);
 
   gl.drawArrays(gl.POINTS, 0, Math.floor(params.nParticles));
 
@@ -901,7 +938,8 @@ function densityStepAndStamp() {
 function render() {
   const waveTex = flip ? texB : texA;
   const densTex = densFlip ? densTexB : densTexA;
-  const viewProj = cameraViewProj();
+  const camera = cameraFrame();
+  const viewProj = camera.viewProj;
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
@@ -932,6 +970,8 @@ function render() {
     gl.uniform1f(U.cloudView.uPointSize, params.cloudPointSize);
     gl.uniform1i(U.cloudView.uShowPhase, params.showPhase);
     gl.uniform1i(U.cloudView.uPaletteId, params.paletteId | 0);
+    gl.uniform1f(U.cloudView.uCameraDistance, camera.distance);
+    gl.uniform1i(U.cloudView.uCameraProjection, params.cameraProjection | 0);
 
     gl.drawArrays(gl.POINTS, 0, voxelCount);
 
@@ -995,6 +1035,8 @@ function render() {
     gl.uniform1f(U.partView.uPointSize, params.dotSize);
     gl.uniform1f(U.partView.uDotSigma, params.dotSigma);
     gl.uniform1f(U.partView.uDotGain, params.dotGain);
+    gl.uniform1f(U.partView.uCameraDistance, camera.distance);
+    gl.uniform1i(U.partView.uCameraProjection, params.cameraProjection | 0);
 
     gl.drawArrays(gl.POINTS, 0, Math.floor(params.nParticles));
 
