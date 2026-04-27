@@ -1,5 +1,6 @@
 #version 300 es
 precision highp float;
+precision highp int;
 precision highp sampler2D;
 
 uniform sampler2D uState;
@@ -11,7 +12,6 @@ uniform float uCloudGamma;
 uniform float uCloudLowBoost;
 uniform float uCloudCutoff;
 uniform float uPointSize;
-uniform int uShowPhase;
 uniform float uCameraDistance;
 uniform int uCameraProjection;
 

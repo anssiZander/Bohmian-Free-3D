@@ -28,7 +28,7 @@ const params = {
   p0: 2.5,
   dt: 0.006,
 
-  packetX: 0.35,
+  packetX: 0.4,
   packetY: 0.5,
   packetZ: 0.5,
   packetSigma: 10.0,
@@ -87,6 +87,7 @@ const EQUIPOTENTIAL_LOG_RHO_MAX = -0.45;
 const EQUIPOTENTIAL_LOG_RHO_STEP = 0.83;
 const EQUIPOTENTIAL_SUBDIV = 3;
 const EQUIPOTENTIAL_LINE_WIDTH_PX = 3.0;
+const SCENE_SCREEN_OFFSET_X = 0.15;
 
 let paused = false;
 
@@ -207,6 +208,8 @@ function addSectionHeader(label) {
 
 addSlider("simRes", "grid size", 32, MAX_SIM_RES, 4, () => rebuildSimulation());
 addSlider("stepsPerFrame", "Steps/frame", 1, 30, 1);
+addSlider("dt", "dt", 0.002, 0.02, 0.002);
+
 const cameraProjectionControl = addCycleButton("cameraProjection", "camera view", ["Perspective", "Orthographic"], () => {
   activeOrthoView = null;
   syncCameraUi();
@@ -215,8 +218,8 @@ const cameraProjectionControl = addCycleButton("cameraProjection", "camera view"
 
 addSectionHeader("Physical Parameters");
 addSlider("p0", "momentum p", 0., 6.0, 0.1, () => resetAll());
-addSlider("dt", "dt", 0.002, 0.02, 0.002);
-addSlider("packetX", "packet start x", 0.15, 0.75, 0.01, () => resetAll());
+
+//addSlider("packetX", "packet start x", 0.15, 0.75, 0.01, () => resetAll());
 addSlider("packetSigma", "packet sigma", 4.0, 14.0, 0.5, () => resetAll());
 addSlider("spinS", "spin strength", 0.0, 2.0, 0.5);
 addSlider("nParticles", "particle count", 1, 5001, 100, () => rebuildParticles());
@@ -226,16 +229,16 @@ addToggleInt("showCloud", "density cloud");
 addToggleInt("showPhase", "show phase");
 addToggleInt("showEquipotentials", "spin contours");
 addSlider("cloudGain", "cloud density", 0.1, 2.0, 0.1);
-addSlider("cloudPointSize", "cloud point size", 20, 100.0, 10);
+//addSlider("cloudPointSize", "cloud point size", 20, 100.0, 10);
 addToggleInt("showParticles", "show particles");
 addSlider("dotSize", "particle size", 2.0, 16.0, 0.5);
 addSlider("dotGain", "particle brightness", 0.1, 5.0, 0.1);
 
 addToggleInt("showTrail", "draw trails");
 addSlider("trailHalfLife", "trail half-life", .1, 10.0, .1);
-addSlider("trailVisGain", "trail gain", 0.1, 1.0, 0.1);
-addSlider("trailVisGamma", "trail gamma", 0.4, 2.0, 0.05);
-addSlider("trailWidth", "trail width", 1, 15.0, 1);
+//addSlider("trailVisGain", "trail gain", 0.1, 1.0, 0.1);
+//addSlider("trailVisGamma", "trail gamma", 0.4, 2.0, 0.05);
+//addSlider("trailWidth", "trail width", 1, 15.0, 1);
 
 document.getElementById("reset").onclick = () => resetAll();
 document.getElementById("pause").onclick = (e) => {
@@ -641,6 +644,17 @@ function mat4Mul(a, b) {
   return out;
 }
 
+function mat4ClipOffset(x, y) {
+  const out = new Float32Array(16);
+  out[0] = 1;
+  out[5] = 1;
+  out[10] = 1;
+  out[12] = x;
+  out[13] = y;
+  out[15] = 1;
+  return out;
+}
+
 function boxCenterWorld() {
   return worldFromGrid([
     0.5 * (simW - 1),
@@ -840,8 +854,9 @@ function cameraFrame() {
   } else {
     proj = mat4Perspective(fovy, aspect, 0.04 * n, 8.0 * n);
   }
+  const viewProj = mat4Mul(mat4ClipOffset(SCENE_SCREEN_OFFSET_X, 0), mat4Mul(proj, view));
   return {
-    viewProj: mat4Mul(proj, view),
+    viewProj,
     eye,
     distance: cameraOrbit.distance,
   };
