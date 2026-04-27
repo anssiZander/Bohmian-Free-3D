@@ -38,17 +38,19 @@ const params = {
   velClamp: 80.0,
   spinS: 0.5,
 
-  cloudGain: .5,
+  cloudGain: .25,
   cloudGamma: 0.55,
+  cloudLowBoost: 0.5,
   cloudCutoff: 0.003,
   cloudPointSize: 80.,
   showPhase: 0,
   showCloud: 1,
+  showEquipotentials: 0,
 
   showParticles: 1,
   dotSize: 8.0,
   dotSigma: 0.28,
-  dotGain: 0.85,
+  dotGain: 2.0,
 
   showTrail: 0,
   trailHalfLife: 1.0,
@@ -79,6 +81,12 @@ const PALETTE_NAMES = [
 const GUIDING_MODE_NAMES = [
   "Pauli spin (+z)"
 ];
+
+const EQUIPOTENTIAL_LEVEL_COUNT = 9;
+const EQUIPOTENTIAL_LOG_RHO_MAX = -0.45;
+const EQUIPOTENTIAL_LOG_RHO_STEP = 0.83;
+const EQUIPOTENTIAL_SUBDIV = 3;
+const EQUIPOTENTIAL_LINE_WIDTH_PX = 3.0;
 
 let paused = false;
 
@@ -209,7 +217,6 @@ addSectionHeader("Physical Parameters");
 addSlider("p0", "momentum p", 0., 6.0, 0.1, () => resetAll());
 addSlider("dt", "dt", 0.002, 0.02, 0.002);
 addSlider("packetX", "packet start x", 0.15, 0.75, 0.01, () => resetAll());
-//addSlider("packetY", "packet start y", 0.05, 0.95, 0.01, () => resetAll());
 addSlider("packetSigma", "packet sigma", 4.0, 14.0, 0.5, () => resetAll());
 addSlider("spinS", "spin strength", 0.0, 2.0, 0.5);
 addSlider("nParticles", "particle count", 1, 5001, 100, () => rebuildParticles());
@@ -217,11 +224,12 @@ addSlider("nParticles", "particle count", 1, 5001, 100, () => rebuildParticles()
 addSectionHeader("Visual Parameters");
 addToggleInt("showCloud", "density cloud");
 addToggleInt("showPhase", "show phase");
-addSlider("cloudGain", "cloud density", 0.1, 5.0, 0.1);
+addToggleInt("showEquipotentials", "spin contours");
+addSlider("cloudGain", "cloud density", 0.1, 2.0, 0.1);
 addSlider("cloudPointSize", "cloud point size", 20, 100.0, 10);
 addToggleInt("showParticles", "show particles");
 addSlider("dotSize", "particle size", 2.0, 16.0, 0.5);
-addSlider("dotGain", "particle brightness", 0.1, 3.0, 0.1);
+addSlider("dotGain", "particle brightness", 0.1, 5.0, 0.1);
 
 addToggleInt("showTrail", "draw trails");
 addSlider("trailHalfLife", "trail half-life", .1, 10.0, .1);
@@ -331,6 +339,10 @@ async function loadShaders() {
     "wave_step.frag",
     "cloud_render.vert",
     "cloud_render.frag",
+    "equipotential_render.vert",
+    "equipotential_render.frag",
+    "box_shell_render.vert",
+    "box_shell_render.frag",
     "particle_update.vert",
     "particle_update.frag",
     "particle_render.vert",
@@ -345,7 +357,7 @@ async function loadShaders() {
 }
 
 let progWaveInit, progWaveStep;
-let progCloudView, progLineView;
+let progCloudView, progEquipotentialView, progBoxShellView, progLineView;
 let progPartUpdate, progPartView, progPartStamp;
 let progDensityStep, progDensityRender;
 
@@ -360,6 +372,14 @@ function buildPrograms() {
   progCloudView = link(
     compile(gl.VERTEX_SHADER, SH["cloud_render.vert"]),
     compile(gl.FRAGMENT_SHADER, SH["cloud_render.frag"])
+  );
+  progEquipotentialView = link(
+    compile(gl.VERTEX_SHADER, SH["equipotential_render.vert"]),
+    compile(gl.FRAGMENT_SHADER, SH["equipotential_render.frag"])
+  );
+  progBoxShellView = link(
+    compile(gl.VERTEX_SHADER, SH["box_shell_render.vert"]),
+    compile(gl.FRAGMENT_SHADER, SH["box_shell_render.frag"])
   );
 
   progPartUpdate = link(
@@ -419,12 +439,34 @@ function buildPrograms() {
     uBoxScale: u(progCloudView, "uBoxScale"),
     uCloudGain: u(progCloudView, "uCloudGain"),
     uCloudGamma: u(progCloudView, "uCloudGamma"),
+    uCloudLowBoost: u(progCloudView, "uCloudLowBoost"),
     uCloudCutoff: u(progCloudView, "uCloudCutoff"),
     uPointSize: u(progCloudView, "uPointSize"),
     uShowPhase: u(progCloudView, "uShowPhase"),
     uPaletteId: u(progCloudView, "uPaletteId"),
     uCameraDistance: u(progCloudView, "uCameraDistance"),
     uCameraProjection: u(progCloudView, "uCameraProjection"),
+  };
+
+  U.equipotentialView = {
+    uState: u(progEquipotentialView, "uState"),
+    uSimRes: u(progEquipotentialView, "uSimRes"),
+    uViewProj: u(progEquipotentialView, "uViewProj"),
+    uViewport: u(progEquipotentialView, "uViewport"),
+    uBoxScale: u(progEquipotentialView, "uBoxScale"),
+    uLevelCount: u(progEquipotentialView, "uLevelCount"),
+    uSubdiv: u(progEquipotentialView, "uSubdiv"),
+    uLogRhoMax: u(progEquipotentialView, "uLogRhoMax"),
+    uLogRhoStep: u(progEquipotentialView, "uLogRhoStep"),
+    uRhoFloor: u(progEquipotentialView, "uRhoFloor"),
+    uFloorZ: u(progEquipotentialView, "uFloorZ"),
+    uLineWidthPx: u(progEquipotentialView, "uLineWidthPx"),
+  };
+
+  U.boxShellView = {
+    uViewProj: u(progBoxShellView, "uViewProj"),
+    uCameraEye: u(progBoxShellView, "uCameraEye"),
+    uBoxCenter: u(progBoxShellView, "uBoxCenter"),
   };
 
   U.partView = {
@@ -481,6 +523,7 @@ let texA = null, texB = null, fboA = null, fboB = null, flip = 0;
 
 let particleSrc = null, particleDst = null, vaoParticles = null, tf = null;
 let boxBuffer = null, vaoBox = null, boxVertexCount = 0;
+let boxShellBuffer = null, vaoBoxShell = null, boxShellVertexCount = 0;
 
 let densW = 0, densH = 0;
 let densTexA = null, densTexB = null, densFboA = null, densFboB = null, densFlip = 0;
@@ -616,7 +659,7 @@ const cameraTarget = {
   pitch: cameraOrbit.pitch,
   distance: cameraOrbit.distance,
 };
-const CAMERA_EASE = 0.18;
+const CAMERA_EASE = 0.1;
 const ORTHO_VIEWS = {
   XY: { yaw: -Math.PI * 0.5, pitch: Math.PI * 0.5 },
   XZ: { yaw: -Math.PI * 0.5, pitch: 0 },
@@ -683,10 +726,9 @@ function selectOrthoView(key) {
 }
 
 function disableOrthoModeFromOrbit() {
-  if (params.cameraProjection !== 0 || activeOrthoView !== null) {
-    activeOrthoView = null;
-    setCameraProjection(0);
-  }
+  if (activeOrthoView === null) return;
+  activeOrthoView = null;
+  setCameraProjection(0);
 }
 
 function syncCameraTargetToCurrent() {
@@ -1136,6 +1178,12 @@ function densityStepAndStamp() {
   densFlip = 1 - densFlip;
 }
 
+function equipotentialVertexCount() {
+  if (simW < 2 || simH < 2) return 0;
+  const subcellsPerCell = EQUIPOTENTIAL_SUBDIV * EQUIPOTENTIAL_SUBDIV;
+  return (simW - 1) * (simH - 1) * subcellsPerCell * EQUIPOTENTIAL_LEVEL_COUNT * 12;
+}
+
 function render() {
   const waveTex = flip ? texB : texA;
   const densTex = densFlip ? densTexB : densTexA;
@@ -1167,6 +1215,7 @@ function render() {
     gl.uniform1f(U.cloudView.uBoxScale, params.boxScale);
     gl.uniform1f(U.cloudView.uCloudGain, params.cloudGain);
     gl.uniform1f(U.cloudView.uCloudGamma, params.cloudGamma);
+    gl.uniform1f(U.cloudView.uCloudLowBoost, params.cloudLowBoost);
     gl.uniform1f(U.cloudView.uCloudCutoff, params.cloudCutoff);
     gl.uniform1f(U.cloudView.uPointSize, params.cloudPointSize);
     gl.uniform1i(U.cloudView.uShowPhase, params.showPhase);
@@ -1212,15 +1261,65 @@ function render() {
     gl.disable(gl.BLEND);
   }
 
+  if (vaoBoxShell && boxShellVertexCount > 0) {
+    const boxCenter = boxCenterWorld();
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+
+    gl.useProgram(progBoxShellView);
+    gl.bindVertexArray(vaoBoxShell);
+    gl.uniformMatrix4fv(U.boxShellView.uViewProj, false, viewProj);
+    gl.uniform3fv(U.boxShellView.uCameraEye, camera.eye);
+    gl.uniform3fv(U.boxShellView.uBoxCenter, boxCenter);
+    gl.drawArrays(gl.TRIANGLES, 0, boxShellVertexCount);
+
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+  }
+
   if (vaoBox && boxVertexCount > 0) {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(progLineView);
     gl.bindVertexArray(vaoBox);
     gl.uniformMatrix4fv(U.lineView.uViewProj, false, viewProj);
-    gl.uniform4f(U.lineView.uColor, 0.32, 0.48, 0.62, 0.32);
+    gl.uniform4f(U.lineView.uColor, 0.38, 0.72, 0.68, 0.22);
     gl.drawArrays(gl.LINES, 0, boxVertexCount);
     gl.disable(gl.BLEND);
+  }
+
+  if (params.showEquipotentials) {
+    const vertexCount = equipotentialVertexCount();
+    if (vertexCount > 0) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+
+      gl.useProgram(progEquipotentialView);
+      gl.bindVertexArray(vaoEmpty);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, waveTex);
+      gl.uniform1i(U.equipotentialView.uState, 0);
+      gl.uniform3i(U.equipotentialView.uSimRes, simW, simH, simD);
+      gl.uniformMatrix4fv(U.equipotentialView.uViewProj, false, viewProj);
+      gl.uniform2f(U.equipotentialView.uViewport, canvas.width, canvas.height);
+      gl.uniform1f(U.equipotentialView.uBoxScale, params.boxScale);
+      gl.uniform1i(U.equipotentialView.uLevelCount, EQUIPOTENTIAL_LEVEL_COUNT);
+      gl.uniform1i(U.equipotentialView.uSubdiv, EQUIPOTENTIAL_SUBDIV);
+      gl.uniform1f(U.equipotentialView.uLogRhoMax, EQUIPOTENTIAL_LOG_RHO_MAX);
+      gl.uniform1f(U.equipotentialView.uLogRhoStep, EQUIPOTENTIAL_LOG_RHO_STEP);
+      gl.uniform1f(U.equipotentialView.uRhoFloor, params.rhoMin);
+      gl.uniform1f(U.equipotentialView.uFloorZ, 0.0);
+      gl.uniform1f(U.equipotentialView.uLineWidthPx, EQUIPOTENTIAL_LINE_WIDTH_PX);
+
+      gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+    }
   }
 
   if (params.showParticles) {
@@ -1261,6 +1360,8 @@ function updateStats() {
 function rebuildBoxGeometry() {
   if (boxBuffer) gl.deleteBuffer(boxBuffer);
   if (vaoBox) gl.deleteVertexArray(vaoBox);
+  if (boxShellBuffer) gl.deleteBuffer(boxShellBuffer);
+  if (vaoBoxShell) gl.deleteVertexArray(vaoBoxShell);
 
   const x0 = 0, y0 = 0, z0 = 0;
   const x1 = simW - 1, y1 = simH - 1, z1 = simD - 1;
@@ -1289,6 +1390,50 @@ function rebuildBoxGeometry() {
   gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
+  gl.bindVertexArray(null);
+
+  const shellVerts = [];
+  const pushShellVertex = (corner, normal, uv) => {
+    shellVerts.push(
+      corner[0] * params.boxScale,
+      corner[1] * params.boxScale,
+      corner[2] * params.boxScale,
+      normal[0],
+      normal[1],
+      normal[2],
+      uv[0],
+      uv[1]
+    );
+  };
+  const pushFace = (a, b, c, d, normal) => {
+    const uvA = [0, 0], uvB = [1, 0], uvC = [1, 1], uvD = [0, 1];
+    pushShellVertex(corners[a], normal, uvA);
+    pushShellVertex(corners[b], normal, uvB);
+    pushShellVertex(corners[c], normal, uvC);
+    pushShellVertex(corners[a], normal, uvA);
+    pushShellVertex(corners[c], normal, uvC);
+    pushShellVertex(corners[d], normal, uvD);
+  };
+
+  pushFace(0, 1, 2, 3, [0, 0, -1]);
+  pushFace(4, 7, 6, 5, [0, 0, 1]);
+  pushFace(0, 3, 7, 4, [-1, 0, 0]);
+  pushFace(1, 5, 6, 2, [1, 0, 0]);
+  pushFace(0, 4, 5, 1, [0, -1, 0]);
+  pushFace(3, 2, 6, 7, [0, 1, 0]);
+
+  boxShellVertexCount = shellVerts.length / 8;
+  boxShellBuffer = gl.createBuffer();
+  vaoBoxShell = gl.createVertexArray();
+  gl.bindVertexArray(vaoBoxShell);
+  gl.bindBuffer(gl.ARRAY_BUFFER, boxShellBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(shellVerts), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 32, 0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 32, 12);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
   gl.bindVertexArray(null);
 }
 

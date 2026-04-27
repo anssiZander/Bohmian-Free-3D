@@ -14,6 +14,7 @@ so the fixed Pauli spin direction is `+z` / up. The wave uses hard-wall boundary
 - Drag the canvas to orbit around the box center; wheel zooms.
 - `particle count` is capped lower than the 2D version for 3D performance.
 - `density cloud` draws the 3D wave density as a projected point cloud.
+- `ln(rho) contours` projects soft teal equipotential curves from the middle XY slice onto the box floor.
 - `Reset` restarts the wave, particles, and trails.
 - `Pause` stops time stepping.
 - `R` resets the simulation.

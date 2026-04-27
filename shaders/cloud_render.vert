@@ -8,6 +8,7 @@ uniform mat4 uViewProj;
 uniform float uBoxScale;
 uniform float uCloudGain;
 uniform float uCloudGamma;
+uniform float uCloudLowBoost;
 uniform float uCloudCutoff;
 uniform float uPointSize;
 uniform int uShowPhase;
@@ -37,6 +38,7 @@ void main() {
   float rho = dot(psi, psi);
   float intensity = 1.0 - exp(-uCloudGain * rho);
   intensity = pow(clamp(intensity, 0.0, 1.0), uCloudGamma);
+  intensity = mix(intensity, pow(intensity, 0.52), clamp(uCloudLowBoost, 0.0, 1.0));
 
   vIntensity = intensity;
   vPhase = atan(psi.y, psi.x);
