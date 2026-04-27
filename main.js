@@ -261,6 +261,18 @@ minBtn.onclick = () => {
   minBtn.textContent = uiMinimized ? "+" : "-";
 };
 
+const explainPanel = document.getElementById("explain");
+const explainToggle = document.getElementById("explainToggle");
+let explainOpen = false;
+if (explainPanel && explainToggle) {
+  explainToggle.onclick = () => {
+    explainOpen = !explainOpen;
+    explainPanel.classList.toggle("closed", !explainOpen);
+    explainToggle.textContent = explainOpen ? "-" : "+";
+    explainToggle.title = explainOpen ? "Close explanation" : "Open explanation";
+  };
+}
+
 function compile(type, src) {
   const sh = gl.createShader(type);
   gl.shaderSource(sh, src);
